@@ -5,19 +5,19 @@ C'est un petit serveur utilisant NestJs qui va valider ou non les données d'un 
 
 ## Logique
 
-L'application va d'abord vérifier s'il y a des doublons dans les mouvements bancaire envoyés, en se basant sur leurs Ids. S'il y en a, une erreur avec pour message `Duplicate bank operations` est renvoyé, ainsi que toutes les données présentes en double dans le champ `duplicateOperations`.  
+L'application va d'abord vérifier s'il y a des doublons dans les mouvements bancaire envoyés, en se basant sur leurs Ids. S'il y en a, on filtre le tableau pour les rétirer et l'ajouter au journal d'erreur.
 
 Ensuite, je crée un tableau contenant toutes les opérations ainsi que les points de contrôles que je trie selon leur date, du plus ancien au plus récent. 
 
-Si le dernier élément enregistré n'est pas un point de contrôle, je considère que les données ne sont pas correctes et envoie une erreur `Uncontrolled bank operation`, avec ce mouvement de banque dans le champ `uncontrolledOperation`. En effet, il y aura forcement des opérations qui ne seront pas validées. Selon le comportement attendu, on pourrait accepter ces données si le point de contrôle  n'a simplement pas encore été généré.
+Si le dernier élément enregistré n'est pas un point de contrôle, toutes les opérations suivant le dernier point de contrôle de la liste ne peuvent pas être validées. J'ajoute ces données dans une erreur `Uncontrolled bank operations` dans le journal d'erreur. Selon le comportement attendu, on pourrait accepter ces données si le point de contrôle  n'a simplement pas encore été généré.
 
 Après cela j'utilise le point de contrôle antérieur à toutes les opérations (s'il présent) pour initialiser le solde du compte. Sans ce point de contrôle, je considère que le compte est un nouveau compte, sans point de contrôle précédent, mais on pourrait renvoyer une erreur.  
 
 Une fois dans cette configuration, il suffit de boucler sur les objets pour les traiter de façon chronologique.   
 Quand on traite un mouvement de banque, on ajoute sa valeur au solde.  
-Quand on traite un point de contrôle, on vérifie que le solde de celui-ci est égal au solde calculé jusqu'ici. Si ce n'est pas le cas, on envoie une erreur avec pour message `Mismatch on control point` et le point posant problème dans le champ `failedControlPoint`.  
+Quand on traite un point de contrôle, on vérifie que le solde de celui-ci est égal au solde calculé jusqu'ici. Si ce n'est pas le cas, on sauvegarde ce point de contrôle pour l'ajouter à l'erreur `Mismatch on control points`, puis on récupère sa valeur pour valider les opérations suivantes.
 
-Si aucune erreur n'a été envoyée, on renvoie le message `Accepted`, les données sont conformes.
+Si le journal d'erreur est vide, les données sont acceptées
 
 ## Comment utiliser
 
@@ -31,6 +31,7 @@ npm run start:dev
 Pour lancer les tests e2e :
 ```
 npm run test
+npm run test:cov    // version avec coverage
 ```
 
 ## API
@@ -47,14 +48,16 @@ En réponse on aura un status 202 si les données sont valide, ou un 418 (le cod
     // Le message de réponse
     message: string; 
 
-    // les lignes dupliquées si cette erreur arrive
-    duplicateBankOperations?: BankOperation[]; 
-
-    // Le point de contrôle invalide si le solde n'est pas bon
-    failedControlPoint?: ControlPoint;
-
-    // Une opération non validée par un point de contrôle si cela arrive
-    uncontrolledOperation?: BankOperation;
+    // Les possibles erreurs sont renvoyées ici, selon le message on aura des données differentes
+    errorReport?: [{
+        message: 
+            | 'Mismatch on control point'
+            | 'Uncontrolled bank operations'
+            | 'Duplicate bank operations';
+        failedControlPoints?: ControlPoint[];
+        uncontrolledOperations?: BankOperation[];
+        duplicateBankOperations?: BankOperation[];
+    }]
 }
 ```
 
@@ -72,11 +75,10 @@ En réponse on aura un status 202 si les données sont valide, ou un 418 (le cod
     |   bank-operation.dto.ts
     |   control-point.dto.ts
     |   validation.dto.ts           
- └─── exception
-    |   bank-validation.exception.ts    // Exception custom pour gérer les différentes erreurs
+    |   dated-operation.model.ts    // interface pour stocker organiser les deux types d'objets dans le tableau           
+    |   invalid-data.model.ts       // interface représentant un élément invalide dans les données
 ```
 
 
 ## Tests
-J'ai fourni des test e2e assez simple, ainsi que des données de test, qui permettent de voir les comportements les plus courants.  
-Je n'ai pas mis de tests unitaires car la méthode `instanceOf` pose des problèmes de contexte et renvoie toujours `false` sur une configuration basique de Jest.  J'aurai pu contourner le problème en n'utilisant pas `instanceOf`, mais je trouve le code plus lisible avec, ce qui me semble plus important pour un test technique.
+Les tests ont été améliorés pour mieux couvrir les cas possibles et j'ai rajouté le coverage qui manquait.

@@ -1,5 +1,8 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, Post, Res } from '@nestjs/common';
+import { Response } from 'express';
+import { InvalidData } from './model/invalid-data.model';
 import { ValidationDto } from './model/validation.dto';
+import { ValidationResponse } from './model/validation.response';
 import { ValidationService } from './validation.service';
 
 /**
@@ -11,16 +14,31 @@ export class ValidationController {
 
   /**
    * API route that sends back a 201 when the data is valid
+   * Sends back a 418 and an array of InvalidData otherwise
    * @param body bank movements and control points
-   * @returns "Accepted" if the data is correct
    */
   @Post('/validation')
-  @HttpCode(202)
-  public postValidation(@Body() body: ValidationDto): { message: string } {
-    this.validationService.validateBankOperations(
-      body.movements,
-      body.balances,
-    );
-    return { message: 'Accepted' };
+  public postValidation(
+    @Body() body: ValidationDto,
+    @Res() res: Response,
+  ): void {
+    const errorReport: InvalidData[] =
+      this.validationService.validateBankOperations(
+        body.movements,
+        body.balances,
+      );
+
+    if (errorReport.length) {
+      const result: ValidationResponse = {
+        message: 'refused',
+        errorReport,
+      };
+      res.status(418).json(result);
+    } else {
+      const result: ValidationResponse = {
+        message: 'accepted',
+      };
+      res.status(202).json(result);
+    }
   }
 }
